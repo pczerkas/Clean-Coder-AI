@@ -4,17 +4,24 @@ import re
 
 import playwright
 from dotenv import find_dotenv, load_dotenv
-from langchain.tools import tool, StructuredTool
+from langchain.tools import StructuredTool, tool
 
 from rag.retrieval import retrieve
 from utilities.syntax_checker_functions import check_syntax
 
 load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
-allowed_paths = list(filter(None, re.split(r'[\n,]', os.getenv("ALLOWED_PATHS"))))
-read_only_paths = list(filter(None, re.split(r'[\n,]', os.getenv("READ_ONLY_PATHS"))))
-blacklisted_paths = list(filter(None, re.split(r'[\n,]', os.getenv("BLACKLISTED_PATHS"))))
-tool_description_read_only_paths = 'This tool cannot be used in this directories: ' + ', '.join(read_only_paths) if read_only_paths else ''
+allowed_paths = list(filter(None, re.split(r"[\n,]", os.getenv("ALLOWED_PATHS"))))
+read_only_paths = list(filter(None, re.split(r"[\n,]", os.getenv("READ_ONLY_PATHS"))))
+blacklisted_paths = list(
+    filter(None, re.split(r"[\n,]", os.getenv("BLACKLISTED_PATHS")))
+)
+tool_description_read_only_paths = (
+    "This tool cannot be used in this directories (and subdirectories): "
+    + ", ".join(read_only_paths)
+    if read_only_paths
+    else ""
+)
 
 WRONG_EXECUTION_WORD = "Changes have not been introduced. "
 
@@ -34,29 +41,34 @@ Think step by step which function/code block you want to change before proposing
 
 def list_dir(directory):
     try:
-        directory = '/' + directory.lstrip('/').rstrip('/')
+        directory = "/" + directory.lstrip("/").rstrip("/")
         files = set()
-        if any(directory.startswith('/' + ap.lstrip('/')) for ap in allowed_paths):
+        if any(directory.startswith("/" + ap.lstrip("/")) for ap in allowed_paths):
             files = os.listdir(work_dir + directory)
         elif any(
-            (('/' + ap.lstrip('/')).rstrip('/') + '/').startswith(directory)
+            (("/" + ap.lstrip("/")).rstrip("/") + "/").startswith(directory)
             for ap in allowed_paths
         ):
-            level = (directory.rstrip('/') + '/').count('/')
+            level = (directory.rstrip("/") + "/").count("/")
             for ap in allowed_paths:
                 try:
-                    files.add((ap.rstrip('/').split('/'))[level - 1])
+                    files.add((ap.rstrip("/").split("/"))[level - 1])
                 except IndexError:
                     continue
             files = list(files)
 
         for f in files:
-            if any((directory + '/' + f).startswith('/' + bp.lstrip('/')) for bp in blacklisted_paths):
+            if any(
+                (directory + "/" + f).startswith("/" + bp.lstrip("/"))
+                for bp in blacklisted_paths
+            ):
                 files.remove(f)
 
         return files
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
 list_dir = StructuredTool.from_function(
     list_dir,
     description=f"""List files in directory.
@@ -64,8 +76,9 @@ list_dir = StructuredTool.from_function(
     :param directory: Name of directory to list files in.
 
     Main directories: {', '.join(allowed_paths)}
-    """
+    """,
 )
+
 
 @tool
 def see_file(filename):
@@ -74,8 +87,8 @@ def see_file(filename):
     :param filename: Name and path of file to check.
     """
     try:
-        if any(filename.startswith('/' + bp.lstrip('/')) for bp in blacklisted_paths):
-            return 'You are not allowed to see into this file.'
+        if any(filename.startswith("/" + bp.lstrip("/")) for bp in blacklisted_paths):
+            return "You are not allowed to see into this file."
         with open(work_dir + filename, "r", encoding="utf-8") as file:
             lines = file.readlines()
         formatted_lines = [f"{i+1}|{line[:-1]}\n" for i, line in enumerate(lines)]
@@ -109,8 +122,8 @@ def see_image(filename):
     :param filename: Name and path of image to check.
     """
     try:
-        with open(work_dir + filename, 'rb') as image_file:
-            img_encoded = base64.b64encode(image_file.read()).decode('utf-8')
+        with open(work_dir + filename, "rb") as image_file:
+            img_encoded = base64.b64encode(image_file.read()).decode("utf-8")
         return img_encoded
     except Exception as e:
         return f"{type(e).__name__}: {e}"
@@ -142,6 +155,8 @@ def insert_code(filename, line_number, code):
         return "Code inserted."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
 insert_code = StructuredTool.from_function(
     insert_code,
     description=f"""Insert new piece of code into provided file. Use when new code need to be added without replacing old one.
@@ -152,7 +167,7 @@ insert_code = StructuredTool.from_function(
     :param code: Code to insert into the file. Without backticks around. Start it with appropriate indentation if needed.
 
     {tool_description_read_only_paths}
-    """
+    """,
 )
 
 
@@ -182,6 +197,8 @@ def replace_code(filename, start_line, code, end_line):
         return "Code modified."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
 replace_code = StructuredTool.from_function(
     replace_code,
     description=f"""Replace old piece of code between start_line and end_line with new one. Proper indentation is important.
@@ -193,7 +210,7 @@ replace_code = StructuredTool.from_function(
     :param end_line: End line number to replace with new code. Inclusive - means end_line will be last line to change.
 
     {tool_description_read_only_paths}
-    """
+    """,
 )
 
 
@@ -213,6 +230,8 @@ def create_file_with_code(filename, code):
         return "File been created successfully."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
 create_file_with_code = StructuredTool.from_function(
     create_file_with_code,
     description="""Create new file with provided code. Use that tool when want to insert some additional lines into code.
@@ -221,7 +240,7 @@ create_file_with_code = StructuredTool.from_function(
     :param code: Code to write in the file.
 
     {tool_description_read_only_paths}
-    """
+    """,
 )
 
 
@@ -241,6 +260,8 @@ def create_directory(path):
         return "Directory has been created successfully."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
 create_directory = StructuredTool.from_function(
     create_directory,
     description="""Create new directory with provided name. Use that tool when you want to create a new directory.
@@ -248,7 +269,7 @@ create_directory = StructuredTool.from_function(
     :param path: Path of directory to create.
 
     {tool_description_read_only_paths}
-    """
+    """,
 )
 
 
@@ -268,6 +289,8 @@ def rename_directory(old_path, new_path):
         return "Directory has been renamed successfully."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
 rename_directory = StructuredTool.from_function(
     rename_directory,
     description="""Rename directory with provided name. Use that tool when you want to rename directory.
@@ -276,7 +299,7 @@ rename_directory = StructuredTool.from_function(
     :param new_path: new path of directory.
 
     {tool_description_read_only_paths}
-    """
+    """,
 )
 
 
