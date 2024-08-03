@@ -1,18 +1,20 @@
-from langchain.tools import tool
-import os
-import json
 import base64
+import os
+import re
+
 import playwright
-from openai import OpenAI
-from dotenv import load_dotenv, find_dotenv
-from utilities.syntax_checker_functions import check_syntax
+from dotenv import find_dotenv, load_dotenv
+from langchain.tools import tool, StructuredTool
+
 from rag.retrieval import retrieve
+from utilities.syntax_checker_functions import check_syntax
 
-
-load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
-forbidden_files_list = os.getenv("FORBIDDEN_FILES").split(',')
-OAIclient = OpenAI()
+allowed_paths = list(filter(None, re.split(r'[\n,]', os.getenv("ALLOWED_PATHS"))))
+read_only_paths = list(filter(None, re.split(r'[\n,]', os.getenv("READ_ONLY_PATHS"))))
+blacklisted_paths = list(filter(None, re.split(r'[\n,]', os.getenv("BLACKLISTED_PATHS"))))
+tool_description_read_only_paths = 'This tool cannot be used in this directories: ' + ', '.join(read_only_paths) if read_only_paths else ''
 
 WRONG_EXECUTION_WORD = "Changes have not been introduced. "
 
@@ -28,18 +30,42 @@ Changes can cause next error: {error_response}. Probably you:
 - Forgot to add an indents on beginning of code.
 Think step by step which function/code block you want to change before proposing improved change.
 """
-@tool
+
+
 def list_dir(directory):
-    """List files in directory.
-    tool input:
-    :param directory: Name of directory to list files in.
-    """
     try:
-        files = os.listdir(work_dir + directory)
+        directory = '/' + directory.lstrip('/').rstrip('/')
+        files = set()
+        if any(directory.startswith('/' + ap.lstrip('/')) for ap in allowed_paths):
+            files = os.listdir(work_dir + directory)
+        elif any(
+            (('/' + ap.lstrip('/')).rstrip('/') + '/').startswith(directory)
+            for ap in allowed_paths
+        ):
+            level = (directory.rstrip('/') + '/').count('/')
+            for ap in allowed_paths:
+                try:
+                    files.add((ap.rstrip('/').split('/'))[level - 1])
+                except IndexError:
+                    continue
+            files = list(files)
+
+        for f in files:
+            if any((directory + '/' + f).startswith('/' + bp.lstrip('/')) for bp in blacklisted_paths):
+                files.remove(f)
+
         return files
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+list_dir = StructuredTool.from_function(
+    list_dir,
+    description=f"""List files in directory.
+    tool input:
+    :param directory: Name of directory to list files in.
 
+    Main directories: {', '.join(allowed_paths)}
+    """
+)
 
 @tool
 def see_file(filename):
@@ -48,9 +74,9 @@ def see_file(filename):
     :param filename: Name and path of file to check.
     """
     try:
-        if filename in forbidden_files_list:
-            return "You are not allowed to see into this file."
-        with open(work_dir + filename, 'r', encoding='utf-8') as file:
+        if any(filename.startswith('/' + bp.lstrip('/')) for bp in blacklisted_paths):
+            return 'You are not allowed to see into this file.'
+        with open(work_dir + filename, "r", encoding="utf-8") as file:
             lines = file.readlines()
         formatted_lines = [f"{i+1}|{line[:-1]}\n" for i, line in enumerate(lines)]
         file_content = "".join(formatted_lines)
@@ -66,6 +92,7 @@ def retrieve_files_by_semantic_query(query):
     """Use that function to find files or folders in the app by text search.
     You can search for example for common styles, endpoint with user data, etc.
     Useful, when you know what do you look for, but don't know where.
+    But, if it is possible, try to formulate your query in line with a main task.
 
     Use that function at least once BEFORE calling final response to ensure you found all appropriate files.
 
@@ -83,88 +110,174 @@ def see_image(filename):
     """
     try:
         with open(work_dir + filename, 'rb') as image_file:
-            img_encoded = base64.b64encode(image_file.read()).decode("utf-8")
+            img_encoded = base64.b64encode(image_file.read()).decode('utf-8')
         return img_encoded
     except Exception as e:
         return f"{type(e).__name__}: {e}"
 
 
-@tool
 def insert_code(filename, line_number, code):
-    """Insert new piece of code into provided file. Use when new code need to be added without replacing old one.
-    Proper indentation is important.
-    tool input:
-    :param filename: Name and path of file to change.
-    :param line_number: Line number to insert new code after.
-    :param code: Code to insert into the file. Without backticks around. Start it with appropriate indentation if needed.
-    """
     try:
-        with open(work_dir + filename, 'r+', encoding='utf-8') as file:
+        with open(work_dir + filename, "r+", encoding="utf-8") as file:
             file_contents = file.readlines()
-            file_contents.insert(line_number, code + '\n')
+            file_contents.insert(line_number, code + "\n")
             file_contents = "".join(file_contents)
             check_syntax_response = check_syntax(file_contents, filename)
             if check_syntax_response != "Valid syntax":
                 print("Wrong syntax provided, asking to correct.")
-                return WRONG_EXECUTION_WORD + syntax_error_insert_code.format(error_response=check_syntax_response)
-            human_message = input("Write 'ok' if you agree with agent or provide commentary: ")
-            if human_message != 'ok':
-                return WRONG_EXECUTION_WORD + f"Action wasn't executed because of human interruption. He said: {human_message}"
+                return WRONG_EXECUTION_WORD + syntax_error_insert_code.format(
+                    error_response=check_syntax_response
+                )
+            human_message = input(
+                "Write 'ok' if you agree with agent or provide commentary: "
+            )
+            if human_message != "ok":
+                return (
+                    WRONG_EXECUTION_WORD
+                    + f"Action wasn't executed because of human interruption. He said: {human_message}"
+                )
             file.seek(0)
             file.truncate()
             file.write(file_contents)
         return "Code inserted."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
-
-
-@tool
-def replace_code(filename, start_line,  code, end_line):
-    """Replace old piece of code between start_line and end_line with new one. Proper indentation is important.
-    Use that tool
+insert_code = StructuredTool.from_function(
+    insert_code,
+    description=f"""Insert new piece of code into provided file. Use when new code need to be added without replacing old one.
+    Proper indentation is important.
     tool input:
     :param filename: Name and path of file to change.
-    :param start_line: Start line number to replace with new code. Inclusive - means start_line will be first line to change.
-    :param code: New piece of code to replace old one. Without backticks around. Start it with appropriate indentation if needed.
-    :param end_line: End line number to replace with new code. Inclusive - means end_line will be last line to change.
+    :param line_number: Line number to insert new code after.
+    :param code: Code to insert into the file. Without backticks around. Start it with appropriate indentation if needed.
+
+    {tool_description_read_only_paths}
     """
+)
+
+
+def replace_code(filename, start_line, code, end_line):
     try:
-        with open(work_dir + filename, 'r+', encoding='utf-8') as file:
+        with open(work_dir + filename, "r+", encoding="utf-8") as file:
             file_contents = file.readlines()
-            file_contents[start_line - 1:end_line] = [code + '\n']
+            file_contents[start_line - 1 : end_line] = [code + "\n"]
             file_contents = "".join(file_contents)
             check_syntax_response = check_syntax(file_contents, filename)
             if check_syntax_response != "Valid syntax":
                 print(check_syntax_response)
-                return WRONG_EXECUTION_WORD + syntax_error_modify_code.format(error_response=check_syntax_response)
-            human_message = input("Write 'ok' if you agree with agent or provide commentary: ")
-            if human_message != 'ok':
-                return WRONG_EXECUTION_WORD + f"Action wasn't executed because of human interruption. He said: {human_message}"
+                return WRONG_EXECUTION_WORD + syntax_error_modify_code.format(
+                    error_response=check_syntax_response
+                )
+            human_message = input(
+                "Write 'ok' if you agree with agent or provide commentary: "
+            )
+            if human_message != "ok":
+                return (
+                    WRONG_EXECUTION_WORD
+                    + f"Action wasn't executed because of human interruption. He said: {human_message}"
+                )
             file.seek(0)
             file.truncate()
             file.write(file_contents)
         return "Code modified."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
-
-
-@tool
-def create_file_with_code(filename, code):
-    """Create new file with provided code. Use that tool when want to insert some additional lines into code.
+replace_code = StructuredTool.from_function(
+    replace_code,
+    description=f"""Replace old piece of code between start_line and end_line with new one. Proper indentation is important.
+    Use that tool when you want to replace old piece of code with new one. Make smallest posible changes with this tool.
     tool input:
-    :param filename: Name and path of file to create.
-    :param code: Code to write in the file.
-    """
-    try:
-        human_message = input("Write 'ok' if you agree with agent or provide commentary: ")
-        if human_message != 'ok':
-            return WRONG_EXECUTION_WORD + f"Action wasn't executed because of human interruption. He said: {human_message}"
+    :param filename: Name and path of file to change.
+    :param start_line: Start line number to replace with new code. Inclusive - means start_line will be first line to change.
+    :param code: New piece of code to replace old one. Without backticks around. Start it with appropriate indentation if needed.
+    :param end_line: End line number to replace with new code. Inclusive - means end_line will be last line to change.
 
-        with open(work_dir + filename, 'w', encoding='utf-8') as file:
+    {tool_description_read_only_paths}
+    """
+)
+
+
+def create_file_with_code(filename, code):
+    try:
+        human_message = input(
+            "Write 'ok' if you agree with agent or provide commentary: "
+        )
+        if human_message != "ok":
+            return (
+                WRONG_EXECUTION_WORD
+                + f"Action wasn't executed because of human interruption. He said: {human_message}"
+            )
+
+        with open(work_dir + filename, "w", encoding="utf-8") as file:
             file.write(code)
         return "File been created successfully."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+create_file_with_code = StructuredTool.from_function(
+    create_file_with_code,
+    description="""Create new file with provided code. Use that tool when want to insert some additional lines into code.
+    tool input:
+    :param filename: Name and path of file to create.
+    :param code: Code to write in the file.
+
+    {tool_description_read_only_paths}
+    """
+)
+
+
+def create_directory(path):
+    try:
+        human_message = input(
+            "Write 'ok' if you agree with agent or provide commentary: "
+        )
+        if human_message != "ok":
+            return (
+                WRONG_EXECUTION_WORD
+                + f"Action wasn't executed because of human interruption. He said: {human_message}"
+            )
+
+        os.makedirs(work_dir + path, exist_ok=True)
+
+        return "Directory has been created successfully."
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+create_directory = StructuredTool.from_function(
+    create_directory,
+    description="""Create new directory with provided name. Use that tool when you want to create a new directory.
+    tool input:
+    :param path: Path of directory to create.
+
+    {tool_description_read_only_paths}
+    """
+)
+
+
+def rename_directory(old_path, new_path):
+    try:
+        human_message = input(
+            "Write 'ok' if you agree with agent or provide commentary: "
+        )
+        if human_message != "ok":
+            return (
+                WRONG_EXECUTION_WORD
+                + f"Action wasn't executed because of human interruption. He said: {human_message}"
+            )
+
+        os.rename(work_dir + old_path, work_dir + new_path)
+
+        return "Directory has been renamed successfully."
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+rename_directory = StructuredTool.from_function(
+    rename_directory,
+    description="""Rename directory with provided name. Use that tool when you want to rename directory.
+    tool input:
+    :param old_path: old path of directory.
+    :param new_path: new path of directory.
+
+    {tool_description_read_only_paths}
+    """
+)
 
 
 @tool
@@ -186,23 +299,22 @@ def make_screenshot(endpoint, login_needed, commands):
     browser = playwright.chromium.launch(headless=False)
     page = browser.new_page()
     if login_needed:
-        page.goto('http://localhost:5555/login')
-        page.fill('#username', 'uname')
-        page.fill('#password', 'passwd')
+        page.goto("http://localhost:5555/login")
+        page.fill("#username", "uname")
+        page.fill("#password", "passwd")
         page.click('.login-form button[type="submit"]')
-    page.goto(f'http://localhost:5555/{endpoint}')
+    page.goto(f"http://localhost:5555/{endpoint}")
 
     for command in commands:
-        action = command.get('action')
-        selector = command.get('selector')
-        value = command.get('value')
-        if action == 'fill':
+        action = command.get("action")
+        selector = command.get("selector")
+        value = command.get("value")
+        if action == "fill":
             page.fill(selector, value)
-        elif action == 'click':
+        elif action == "click":
             page.click(selector)
-        elif action == 'hover':
+        elif action == "hover":
             page.hover(selector)
 
-    page.screenshot(path=work_dir + 'screenshots/screenshot.png')
+    page.screenshot(path=work_dir + "screenshots/screenshot.png")
     browser.close()
-

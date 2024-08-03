@@ -1,6 +1,7 @@
 .env
 .idea/
 .cache/
+.vscode/
 __pycache__/
 env/
 .clean_coder/

@@ -1,13 +1,13 @@
-from langchain.tools import tool
-from todoist_api_python.api import TodoistAPI
 import os
 
-from dotenv import load_dotenv, find_dotenv
+from dotenv import find_dotenv, load_dotenv
+from langchain.tools import tool
+from todoist_api_python.api import TodoistAPI
 
-load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(), override=True)
 
-todoist_api = TodoistAPI(os.getenv('TODOIST_API_KEY'))
-PROJECT_ID = os.getenv('TODOIST_PROJECT_ID')
+todoist_api = TodoistAPI(os.getenv("TODOIST_API_KEY"))
+PROJECT_ID = os.getenv("TODOIST_PROJECT_ID")
 
 
 @tool
@@ -17,7 +17,10 @@ def get_project_tasks():
     {}
     """
     tasks = todoist_api.get_tasks(project_id=PROJECT_ID)
-    return [{'id': task.id, 'name': task.content, 'description': task.description} for task in tasks]
+    return [
+        {"id": task.id, "name": task.content, "description": task.description}
+        for task in tasks
+    ]
 
 
 @tool
@@ -27,7 +30,9 @@ def add_task(task_name, task_description):
     :param task_name: name of the task.
     :param task_description: detailed description of what needs to be done in order to implement task.
     """
-    task = todoist_api.add_task(project_id=PROJECT_ID, content=task_name, description=task_description)
+    task = todoist_api.add_task(
+        project_id=PROJECT_ID, content=task_name, description=task_description
+    )
     return {"status": "Task added successfully", "task_id": task.id}
 
 
@@ -41,9 +46,9 @@ def modify_task(task_id, new_task_name=None, new_task_description=None):
     """
     update_data = {}
     if new_task_name:
-        update_data['content'] = new_task_name
+        update_data["content"] = new_task_name
     if new_task_description:
-        update_data['description'] = new_task_description
+        update_data["description"] = new_task_description
     if update_data:
         todoist_api.update_task(task_id=task_id, **update_data)
     return {"status": "Task modified successfully"}
@@ -90,7 +95,6 @@ def ask_tester_to_check_if_change_been_implemented_correctly(query):
 
 
 if __name__ == "__main__":
-    #print(add_task.invoke({"task_name": "dzik.py", "task_description": "pies"}))
-    #print(mark_task_as_done({"task_id": 8240143331}))
+    # print(add_task.invoke({"task_name": "dzik.py", "task_description": "pies"}))
+    # print(mark_task_as_done({"task_id": 8240143331}))
     print(get_project_tasks({}))
-

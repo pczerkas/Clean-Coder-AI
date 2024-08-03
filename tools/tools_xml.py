@@ -1,13 +1,13 @@
-from langchain.tools import tool
-import os
-import json
 import base64
+import json
+import os
+
 import playwright
+from dotenv import find_dotenv, load_dotenv
+from langchain.tools import tool
 from openai import OpenAI
-from dotenv import load_dotenv, find_dotenv
 
-
-load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
 OAIclient = OpenAI()
 
@@ -34,9 +34,11 @@ def see_file(filename):
     </tool_input>
     """
     try:
-        with open(work_dir + filename, 'r', encoding='utf-8') as file:
+        with open(work_dir + filename, "r", encoding="utf-8") as file:
             lines = file.readlines()
-        formatted_lines = [f"<{i+1}>{line[:-1]}</{i+1}>\n" for i, line in enumerate(lines)]
+        formatted_lines = [
+            f"<{i+1}>{line[:-1]}</{i+1}>\n" for i, line in enumerate(lines)
+        ]
         file_contents = "".join(formatted_lines)
 
         return file_contents
@@ -52,7 +54,7 @@ def see_image(filename):
     </tool_input>
     """
     try:
-        with open(work_dir + filename, 'rb') as image_file:
+        with open(work_dir + filename, "rb") as image_file:
             img_encoded = base64.b64encode(image_file.read()).decode("utf-8")
         return img_encoded
     except Exception as e:
@@ -72,13 +74,15 @@ def insert_code(filename, line_number, code):
     </tool_input>
     """
     try:
-        human_message = input("Write 'ok' if you agree with agent or provide commentary: ")
-        if human_message != 'ok':
+        human_message = input(
+            "Write 'ok' if you agree with agent or provide commentary: "
+        )
+        if human_message != "ok":
             return f"Action wasn't executed because of human interruption. He said: {human_message}"
 
-        with open(work_dir + filename, 'r+', encoding='utf-8') as file:
+        with open(work_dir + filename, "r+", encoding="utf-8") as file:
             file_contents = file.readlines()
-            file_contents.insert(line_number, code + '\n')
+            file_contents.insert(line_number, code + "\n")
             file.seek(0)
             file.truncate()
             file.write("".join(file_contents))
@@ -105,13 +109,15 @@ def replace_code(filename, start_line, end_line, new_code):
     </tool_input>
     """
     try:
-        human_message = input("Write 'ok' if you agree with agent or provide commentary: ")
-        if human_message != 'ok':
+        human_message = input(
+            "Write 'ok' if you agree with agent or provide commentary: "
+        )
+        if human_message != "ok":
             return f"Action wasn't executed because of human interruption. He said: {human_message}"
 
-        with open(work_dir + filename, 'r+', encoding='utf-8') as file:
+        with open(work_dir + filename, "r+", encoding="utf-8") as file:
             file_contents = file.readlines()
-            file_contents[start_line - 1:end_line] = [new_code + '\n']
+            file_contents[start_line - 1 : end_line] = [new_code + "\n"]
             file.seek(0)
             file.truncate()
             file.write("".join(file_contents))
@@ -131,11 +137,13 @@ def create_file_with_code(filename, code):
     </tool_input>
     """
     try:
-        human_message = input("Write 'ok' if you agree with agent or provide commentary: ")
-        if human_message != 'ok':
+        human_message = input(
+            "Write 'ok' if you agree with agent or provide commentary: "
+        )
+        if human_message != "ok":
             return f"Action wasn't executed because of human interruption. He said: {human_message}"
 
-        with open(work_dir + filename, 'w', encoding='utf-8') as file:
+        with open(work_dir + filename, "w", encoding="utf-8") as file:
             file.write(code)
         return "File been created successfully"
     except Exception as e:
@@ -159,13 +167,13 @@ def image_to_code(prompt):
                 {
                     "role": "user",
                     "content": [
-                      {"type": "text", "text": prompt},
-                      {
-                        "type": "image_url",
-                        "image_url": {
-                          "url": f"data:image/jpeg;base64,{img_encoded}",
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img_encoded}",
+                            },
                         },
-                      },
                     ],
                 }
             ],
@@ -181,23 +189,22 @@ def make_screenshot(endpoint, login_needed, commands):
     browser = playwright.chromium.launch(headless=False)
     page = browser.new_page()
     if login_needed:
-        page.goto('http://localhost:5555/login')
-        page.fill('#username', 'uname')
-        page.fill('#password', 'passwd')
+        page.goto("http://localhost:5555/login")
+        page.fill("#username", "uname")
+        page.fill("#password", "passwd")
         page.click('.login-form button[type="submit"]')
-    page.goto(f'http://localhost:5555/{endpoint}')
+    page.goto(f"http://localhost:5555/{endpoint}")
 
     for command in commands:
-        action = command.get('action')
-        selector = command.get('selector')
-        value = command.get('value')
-        if action == 'fill':
+        action = command.get("action")
+        selector = command.get("selector")
+        value = command.get("value")
+        if action == "fill":
             page.fill(selector, value)
-        elif action == 'click':
+        elif action == "click":
             page.click(selector)
-        elif action == 'hover':
+        elif action == "hover":
             page.hover(selector)
 
-    page.screenshot(path=work_dir + 'screenshots/screenshot.png')
+    page.screenshot(path=work_dir + "screenshots/screenshot.png")
     browser.close()
-

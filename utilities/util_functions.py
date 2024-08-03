@@ -1,22 +1,23 @@
-import re
 import json
 import os
+import re
 import textwrap
-from tools.tools import see_file
-from dotenv import load_dotenv, find_dotenv
 import xml.etree.ElementTree as ET
+
+from dotenv import find_dotenv, load_dotenv
 from termcolor import colored
 
+from tools.tools import see_file
 
-load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
 log_file_path = os.getenv("LOG_FILE")
 
 
 def print_wrapped(content, width=160):
-    lines = content.split('\n')
+    lines = content.split("\n")
     wrapped_lines = [textwrap.fill(line, width=width) for line in lines]
-    wrapped_content = '\n'.join(wrapped_lines)
+    wrapped_content = "\n".join(wrapped_lines)
     print(wrapped_content)
 
 
@@ -30,7 +31,7 @@ def check_file_contents(files):
 
 
 def find_tool_json(response):
-    matches = re.findall(r'```json(.*?)```', response, re.DOTALL)
+    matches = re.findall(r"```json(.*?)```", response, re.DOTALL)
 
     if len(matches) == 1:
         json_str = matches[0].strip()
@@ -47,11 +48,11 @@ def find_tool_json(response):
 
 
 def find_tool_xml(input_str):
-    match = re.search('```xml(.*?)```', input_str, re.DOTALL)
+    match = re.search("```xml(.*?)```", input_str, re.DOTALL)
     if match:
         root = ET.fromstring(match.group(1).strip())
-        tool = root.find('tool').text.strip()
-        tool_input_element = root.find('tool_input')
+        tool = root.find("tool").text.strip()
+        tool_input_element = root.find("tool_input")
         tool_input = {}
         for child in tool_input_element:
             child.text = child.text.strip()
@@ -59,7 +60,7 @@ def find_tool_xml(input_str):
                 tool_input[child.tag] = [item.text for item in child]
             else:
                 tool_input[child.tag] = child.text
-        #output = {child.tag: child.text for child in root}
+        # output = {child.tag: child.text for child in root}
         return {"tool": tool, "tool_input": tool_input}
     else:
         return None
@@ -68,7 +69,7 @@ def find_tool_xml(input_str):
 def check_application_logs():
     """Check out logs to see if application works correctly."""
     try:
-        with open(log_file_path, 'r') as file:
+        with open(log_file_path, "r") as file:
             logs = file.read()
         if logs.strip().endswith("No messages found"):
             print("Logs are correct")
@@ -80,7 +81,9 @@ def check_application_logs():
 
 
 def read_project_knowledge():
-    file_path = os.path.join(work_dir, ".clean_coder", "researcher_project_knowledge.prompt")
+    file_path = os.path.join(
+        work_dir, ".clean_coder", "researcher_project_knowledge.prompt"
+    )
 
     # Check if the file exists
     if not os.path.exists(file_path):
@@ -92,6 +95,7 @@ def read_project_knowledge():
         project_knowledge = f.read()
 
     return project_knowledge
+
 
 if __name__ == "__main__":
     print(read_project_knowledge())

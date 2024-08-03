@@ -1,22 +1,63 @@
-from langchain_openai.chat_models import ChatOpenAI
+import os
+from typing import Annotated, Sequence, TypedDict
+
+from dotenv import find_dotenv, load_dotenv
 from langchain.output_parsers import XMLOutputParser
-from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
-from langgraph.graph import END, StateGraph
-from dotenv import load_dotenv, find_dotenv
-from langchain_community.chat_models import ChatOllama
 from langchain_anthropic import ChatAnthropic
-from utilities.util_functions import print_wrapped
-from utilities.langgraph_common_functions import call_model, ask_human, after_ask_human_condition
+from langchain_community.chat_models import ChatOllama
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
+from langchain_openai.chat_models import ChatOpenAI
+from langgraph.graph import END, StateGraph
 
+from utilities.langgraph_common_functions import (
+    after_ask_human_condition,
+    ask_human,
+    call_model,
+)
+from utilities.retrying_context_manager import Retry
+from utilities.util_functions import print_wrapped
 
-load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(), override=True)
+deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0.3).with_config({"run_name": "Planer"})
-#llm = ChatOpenAI(model="gpt-4-vision-preview", temperature=0.3).with_config({"run_name": "Planer"})
-#llm_voter = ChatAnthropic(model='claude-3-opus-20240229')
-#llm = ChatOllama(model="mixtral") #, temperature=0)
+# llm = ChatOpenAI(
+#     model="gpt-4o",
+#     temperature=0.3,
+# ).with_config({"run_name": "Planer"})
+
+# llm = ChatOpenAI(model="gpt-4-vision-preview", temperature=0.3).with_config({"run_name": "Planer"})
+# llm_voter = ChatAnthropic(model='claude-3-opus-20240229')
+# llm = ChatOllama(model="mixtral") #, temperature=0)
+
+# llm = ChatAnthropic(
+#     model='claude-3-5-sonnet-20240620',
+#     temperature=0.3,
+# ).with_config({"run_name": "Planer"})
+
+# llm = ChatOpenAI(
+#     #model='deepseek-chat',
+#     model='deepseek-coder',
+#     openai_api_key=deepseek_api_key,
+#     #openai_api_base='https://api.deepseek.com/v1',
+#     openai_api_base='https://api.deepseek.com/beta',
+#     temperature=0.0,
+#     max_tokens=8000,
+# ).with_config({"run_name": "Planer"})
+# llm = ChatGroq(
+#     #model="llama3-70b-8192", # too many requests (tokens)
+#     #model="llama-3.1-405b-reasoning", # 404 model does not exists
+#     #model="llama-3.1-70b-versatile",
+#     model="Mixtral-8x7b-32768", # stupid
+#     temperature=0.3,
+# ).with_config({"run_name": "Planer"})
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-pro",
+    temperature=0.2,
+    # convert_system_message_to_human=True,
+).with_config({"run_name": "Planer"})
+
 llm_voter = llm.with_config({"run_name": "Voter"})
 llm_secretary = llm
 
@@ -29,8 +70,8 @@ class AgentState(TypedDict):
 
 system_message = SystemMessage(
     content="""
-You are senior programmer. You guiding your code monkey friend about what changes need to be done in code in order 
-to execute given task. Think step by step and provide detailed plan about what code modifications needed to be done 
+You are senior programmer. You guiding your code monkey friend about what changes need to be done in code in order
+to execute given task. Think step by step and provide detailed plan about what code modifications needed to be done
 to execute task. When possible, plan consistent code with other files. Your recommendations should include in details:
 - Details about functions modifications - provide only functions you want to replace, without rest of the file,
 - Details about movement lines and functionalities from file to file,
@@ -38,7 +79,7 @@ to execute task. When possible, plan consistent code with other files. Your reco
 Plan should not include library installation or tests or anything else unrelated to code modifications.
 At every your message, you providing proposition of all changes, not just some.
 
-Do not rewrite full code, instead only write changes and point places where they need to be inserted. 
+Do not rewrite full code, instead only write changes and point places where they need to be inserted.
 Show with pluses (+) and minuses (-), where you want to add/remove code.
 Example:
 - self.id_number = str(ObjectId())
@@ -51,14 +92,14 @@ Example:
 
 voter_system_message = SystemMessage(
     content="""
-    Several implementation plans for a task implementation have been proposed. Carefully analyze these plans and 
+    Several implementation plans for a task implementation have been proposed. Carefully analyze these plans and
     determine which one accomplishes the task most effectively.
     Take in account the following criteria:
     1. The primary criterion is the effectiveness of the plan in executing the task. It is most important.
-    2. A secondary criterion is simplicity. If two plans are equally good, chose one described more concise and required 
+    2. A secondary criterion is simplicity. If two plans are equally good, chose one described more concise and required
     less modifications.
     3. The third criterion is consistency with existing code in other files. Prefer plan with code more similar to existing codebase.
-    
+
     Respond in xml:
     ```xml
     <response>
@@ -79,7 +120,7 @@ voter_system_message = SystemMessage(
 
 secretary_system_message = SystemMessage(
     content="""
-You are secretary of lead developer. You have provided plan proposed by lead developer. Analyze the plan and find if all 
+You are secretary of lead developer. You have provided plan proposed by lead developer. Analyze the plan and find if all
 proposed changes are related to provided list of project files only, or lead dev need to check other files also.
 
 Return in:
@@ -89,8 +130,8 @@ Return in:
 Think step by step if some additional files are needed for that plan or not.
 </reasoning>
 <message_to_file_researcher>
-Write 'No any additional files needed.' if all the proposed plan changes are in given files; write custom message with 
-request to check out files in filesystem if plan assumes changes in another files than provided or lead dev wants to 
+Write 'No any additional files needed.' if all the proposed plan changes are in given files; write custom message with
+request to check out files in filesystem if plan assumes changes in another files than provided or lead dev wants to
 ensure about something in another files.
 </message_to_file_researcher>
 <response>
@@ -104,14 +145,39 @@ def call_planers(state):
     messages = state["messages"]
     nr_plans = 3
     print(f"\nGenerating plan propositions...")
-    plan_propositions_messages = llm.batch([messages for _ in range(nr_plans)])
+
+    def generate_plan_propositions(messages, nr_plans):
+        return llm.batch(
+            [messages for _ in range(nr_plans)],
+            # config={'max_concurrency': 1}, # for debugging
+        )
+
+    with Retry(
+        generate_plan_propositions, stop_max_attempt_number=3, wait_fixed=2000
+    ) as retry_generate_plan_propositions:
+        plan_propositions_messages = retry_generate_plan_propositions(
+            messages, nr_plans
+        )
+
     for i, proposition in enumerate(plan_propositions_messages):
         state["voter_messages"].append(AIMessage(content="_"))
-        state["voter_messages"].append(HumanMessage(content=f"Proposition nr {i+1}:\n\n" + proposition.content))
+        state["voter_messages"].append(
+            HumanMessage(content=f"Proposition nr {i+1}:\n\n" + proposition.content)
+        )
 
     print("Choosing the best plan...")
     chain = llm_voter | XMLOutputParser()
-    response = chain.invoke(state["voter_messages"])
+
+    def choose_the_best_plan(state):
+        return chain.invoke(
+            state["voter_messages"],
+            # config={'max_concurrency': 1}, # for debugging
+        )
+
+    with Retry(
+        choose_the_best_plan, stop_max_attempt_number=3, wait_fixed=2000
+    ) as retry_choose_the_best_plan:
+        response = retry_choose_the_best_plan(state)
 
     choice = int(response["response"][2]["choice"])
     plan = plan_propositions_messages[choice - 1]
@@ -158,17 +224,23 @@ researcher_workflow.add_conditional_edges("human", after_ask_human_condition)
 researcher = researcher_workflow.compile()
 
 
-def planning(task, file_contents, images):
+def planning(task, file_contents):
     print("Planner starting its work")
     message_content_without_imgs = f"Task: {task},\n\nFiles:\n{file_contents}"
     message_without_imgs = HumanMessage(content=message_content_without_imgs)
-    message_images = HumanMessage(content=images)
 
     inputs = {
-        "messages": [system_message, message_without_imgs, message_images],
+        "messages": [system_message, message_without_imgs],
         "voter_messages": [voter_system_message, message_without_imgs],
-        "secretary_messages": [secretary_system_message]
+        "secretary_messages": [secretary_system_message],
     }
-    planner_response = researcher.invoke(inputs, {"recursion_limit": 50})["messages"][-2]
+
+    def get_planner_response(inputs):
+        return researcher.invoke(inputs, {"recursion_limit": 200})["messages"][-2]
+
+    with Retry(
+        get_planner_response, stop_max_attempt_number=3, wait_fixed=2000
+    ) as retry_get_planner_response:
+        planner_response = retry_get_planner_response(inputs)
 
     return planner_response.content

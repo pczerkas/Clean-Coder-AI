@@ -1,41 +1,55 @@
-from langchain_openai.chat_models import ChatOpenAI
-from langchain_mistralai.chat_models import ChatMistralAI
-from langchain_community.chat_models import ChatOllama
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
-from llamaapi import LlamaAPI
-from langchain_experimental.llms import ChatLlamaAPI
-from langchain_anthropic import ChatAnthropic
-from langchain_groq import ChatGroq
-from langchain_together import ChatTogether
-from typing import TypedDict, Sequence
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-from langgraph.prebuilt.tool_executor import ToolExecutor
-from langgraph.graph import StateGraph
-from dotenv import load_dotenv, find_dotenv
-from langchain.tools.render import render_text_description
-from langchain.tools import tool
-from tools.tools import list_dir, see_file, see_image, retrieve_files_by_semantic_query
-from rag.retrieval import vdb_availabe
-from utilities.util_functions import check_file_contents, find_tool_xml, find_tool_json, print_wrapped, read_project_knowledge
-from utilities.langgraph_common_functions import call_model, call_tool, ask_human, after_ask_human_condition
 import os
+from typing import Sequence, TypedDict
 
+from dotenv import find_dotenv, load_dotenv
+from langchain.tools import tool
+from langchain.tools.render import render_text_description
+from langchain_anthropic import ChatAnthropic
+from langchain_community.chat_models import ChatOllama
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_experimental.llms import ChatLlamaAPI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_mistralai.chat_models import ChatMistralAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_openai.chat_models import ChatOpenAI
+from langchain_together import ChatTogether
+from langgraph.graph import StateGraph
+from langgraph.prebuilt.tool_executor import ToolExecutor
+from llamaapi import LlamaAPI
 
-load_dotenv(find_dotenv())
+from models.codeium_chat import CodeiumChatModel
+from rag.retrieval import vdb_availabe
+from tools.tools import list_dir, retrieve_files_by_semantic_query, see_file, see_image
+from utilities.langgraph_common_functions import (
+    after_ask_human_condition,
+    ask_human,
+    call_model,
+    call_tool,
+)
+from utilities.util_functions import (
+    check_file_contents,
+    find_tool_json,
+    find_tool_xml,
+    print_wrapped,
+    read_project_knowledge,
+)
+
+load_dotenv(find_dotenv(), override=True)
 mistral_api_key = os.getenv("MISTRAL_API_KEY")
+deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 
 
 @tool
-def final_response(files_to_work_on, reference_files, template_images):
-    """That tool outputs list of files executor will need to change and paths to graphical patterns if some.
+def final_response(files_to_work_on, reference_files):
+    """That tool outputs list of files executor will need to change.
     Use that tool only when you 100% sure you found all the files Executor will need to modify.
     If not, do additional research.
-    Include only the files you convinced will be useful.
+    Include only the files you are convinced that will be useful.
 
     tool input:
     :param files_to_work_on: ["List", "of", "existing files", "to potentially introduce", "changes"],
-    :param reference_files: ["List", "of code files", "useful to code reference", "without images],
-    :param template_images: ["List of", "template", "images"],
+    :param reference_files: ["List", "of code files", "useful to code reference"],
     """
     pass
 
@@ -45,47 +59,79 @@ if vdb_availabe:
     tools.append(retrieve_files_by_semantic_query)
 rendered_tools = render_text_description(tools)
 
-#stop_sequence = "\n```\n"
+# stop_sequence = "\n```\n"
 stop_sequence = None
 
-#llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
-llm = ChatAnthropic(model='claude-3-5-sonnet-20240620', temperature=0.2)
-#llm = ChatGroq(model="llama3-70b-8192", temperature=0.3).with_config({"run_name": "Researcher"})
-#llm = ChatOllama(model="llama3.1")
-#llm = ChatMistralAI(api_key=mistral_api_key, model="mistral-large-latest")
-#llm = ChatTogether(model="meta-llama/Llama-3-70b-chat-hf", temperature=0.3).with_config({"run_name": "Researcher"})
-#llm = ChatNVIDIA(model="nvidia/llama3-chatqa-1.5-70b")
-#llama = LlamaAPI(os.getenv("LLAMA_API_KEY"))
-#llm = ChatLlamaAPI(client=llama)
-'''llm = ChatOpenAI(
-    model='deepseek-chat',
-    openai_api_key='',
-    openai_api_base='https://api.deepseek.com/v1',
-    temperature=0.2
-)'''
+# original LLM
+# llm = ChatOpenAI(
+#     model="gpt-4o",
+#     temperature=0.2,
+# )
+
+# llm = ChatAnthropic(
+#     model='claude-3-5-sonnet-20240620',
+#     temperature=0.2,
+# )
+
+# llm = ChatGroq(model="llama3-70b-8192", temperature=0.3).with_config({"run_name": "Researcher"})
+# llm = ChatOllama(model="llama3.1")
+# llm = ChatMistralAI(api_key=mistral_api_key, model="mistral-large-latest")
+# llm = ChatTogether(model="meta-llama/Llama-3-70b-chat-hf", temperature=0.3).with_config({"run_name": "Researcher"})
+# llm = ChatNVIDIA(model="nvidia/llama3-chatqa-1.5-70b")
+# llama = LlamaAPI(os.getenv("LLAMA_API_KEY"))
+# llm = ChatLlamaAPI(client=llama)
+
+# llm = ChatOpenAI(
+#     #model='deepseek-chat',
+#     model='deepseek-coder',
+#     openai_api_key=deepseek_api_key,
+#     #openai_api_base='https://api.deepseek.com/v1',
+#     openai_api_base='https://api.deepseek.com/beta',
+#     temperature=0.0,
+#     max_tokens=8000
+# )
+# llm = ChatGroq(
+#     #model="llama3-70b-8192", # too many requests (tokens)
+#     #model="llama-3.1-405b-reasoning", # 404 model does not exists
+#     #model="llama-3.1-70b-versatile",
+#     model="Mixtral-8x7b-32768", # stupid
+#     temperature=0.3,
+# )
+# llm = CodeiumChatModel(
+#     workspace_id='file_home_przemek_VSCode_20Projects_X_code_workspace',
+#     responses=['a','b'],
+# )
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-pro",
+    temperature=0.2,
+    # convert_system_message_to_human=True,
+)
 
 
 class AgentState(TypedDict):
     messages: Sequence[BaseMessage]
 
 
-bad_json_format_msg = ("Bad json format. Json should contain fields 'tool' and 'tool_input' "
-                       "and enclosed with '```json', '```' tags.")
+bad_json_format_msg = (
+    "Bad json format. Json should contain fields 'tool' and 'tool_input' "
+    "and enclosed with '```json', '```' tags."
+)
 
 project_knowledge = read_project_knowledge()
 tool_executor = ToolExecutor(tools)
-system_message_content = f"""As a curious filesystem researcher, examine files thoroughly, prioritizing comprehensive checks. 
+system_message_content = f"""As a curious filesystem researcher, examine files thoroughly, prioritizing comprehensive checks.
 You checking a lot of different folders looking around for interesting files (hey, you are very curious!) before giving the final answer.
 The more folders/files you will check, the more they will pay you.
-When you discover significant dependencies from one file to another, ensure to inspect both. 
-Your final selection should include files needed to be modified or needed as reference for a programmer 
-(for example to see how code in similar file implemented). 
+When you discover significant dependencies from one file to another, ensure to inspect both.
+Your final selection should include files needed to be modified or needed as reference for a programmer
+(for example to see how code in similar file implemented).
 Avoid recommending unseen or non-existent files in final response. Start from '/' directory.
+Avoid checking files, that you have already checked.
 You need to point out all files programmer needed to see to execute task. Task is:
 '''
 {{task}}
 '''
-As a researcher, you are not allowed to make any code modifications. 
+As a researcher, you are not allowed to make any code modifications.
 
 Knowledge about project (not so important):
 {project_knowledge}
@@ -103,6 +149,7 @@ Next, generate response using json template: Choose only one tool to use.
 }}}}
 ```
 """
+
 
 # node functions
 def call_model_researcher(state):
@@ -155,34 +202,19 @@ researcher = researcher_workflow.compile()
 def research_task(task):
     print("Researcher starting its work")
     system_message = system_message_content.format(task=task)
-    inputs = {"messages": [SystemMessage(content=system_message), HumanMessage(content=f"Go")]}
-    researcher_response = researcher.invoke(inputs, {"recursion_limit": 100})["messages"][-2]
+    inputs = {
+        "messages": [SystemMessage(content=system_message), HumanMessage(content=f"Go")]
+    }
+    researcher_response = researcher.invoke(inputs, {"recursion_limit": 500})[
+        "messages"
+    ][-2]
 
-    #tool_json = find_tool_xml(researcher_response.content)
+    # tool_json = find_tool_xml(researcher_response.content)
     tool_json = find_tool_json(researcher_response.content)
-    text_files = set(tool_json["tool_input"]["files_to_work_on"] + tool_json["tool_input"]["reference_files"])
+    text_files = set(
+        tool_json["tool_input"]["files_to_work_on"]
+        + tool_json["tool_input"]["reference_files"]
+    )
     file_contents = check_file_contents(text_files)
 
-    image_paths = tool_json["tool_input"]["template_images"]
-    images = [
-                 {"type": "text", "text": image_path}
-                 for image_path in image_paths
-        ] + [
-        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{see_image(image_path)}"}}
-        for image_path in image_paths
-    ]
-    # images for claude
-    '''
-    images.append(
-        {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/png",
-                "data": see_image(image_path),
-            },
-        }
-    )
-    '''
-
-    return text_files, file_contents, images
+    return text_files, file_contents

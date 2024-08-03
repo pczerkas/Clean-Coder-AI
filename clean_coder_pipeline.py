@@ -1,20 +1,20 @@
-from agents.researcher_agent import research_task
-from agents.planner_agent import planning
 from agents.executor_agent import Executor
+from agents.planner_agent import planning
+from agents.researcher_agent import research_task
 
 
 def run_clean_coder_pipeline(task, self_approve=False):
-    files, file_contents, images = research_task(task)
+    files, file_contents = research_task(task)
 
-    plan = planning(task, file_contents, images)
+    plan = planning(task, file_contents)
 
     executor = Executor(files)
     executor.do_task(task, plan, file_contents)
 
 
 if __name__ == "__main__":
-    task = """In project manager tools file, make project id constant, read it from .env
-
+    task = """
+    Find files related to order edit in admin
     """
 
     run_clean_coder_pipeline(task)
