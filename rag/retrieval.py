@@ -1,6 +1,7 @@
 # these three lines swap the stdlib sqlite3 lib with the pysqlite3 package
-__import__("pysqlite3")
 import sys
+
+import pysqlite3
 
 sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 
@@ -45,8 +46,11 @@ DESCRIPTIONS_PER_QUESTION_DIR = (
 
 load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
-allowed_paths = list(filter(None, re.split(r'[\n,]', os.getenv("ALLOWED_PATHS"))))
-blacklisted_paths = list(filter(None, re.split(r'[\n,]', os.getenv("BLACKLISTED_PATHS"))))
+allowed_paths = list(filter(None, re.split(r"[\n,]", os.getenv("ALLOWED_PATHS"))))
+read_only_paths = list(filter(None, re.split(r"[\n,]", os.getenv("READ_ONLY_PATHS"))))
+blacklisted_paths = list(
+    filter(None, re.split(r"[\n,]", os.getenv("BLACKLISTED_PATHS")))
+)
 deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 cohere_key = os.getenv("COHERE_API_KEY")
 cohere_client = cohere.Client(cohere_key)
@@ -108,13 +112,16 @@ def _get_files_descriptions_for_question(
 ) -> str:
     prompt = ChatPromptTemplate.from_template(
         """Given file:
-\n{FILE_NAME_BEGIN}{file_name}{FILE_NAME_END}
+{FILE_NAME_BEGIN}{file_name}{FILE_NAME_END}
 and its lenghty description:
-\n'''{file_description}'''
-\n\nprovide at most 3 key facts about this file with regards to the question:
-\n{QUESTION_BEGIN}{question}{QUESTION_END}. Without any comments from your side.
-\nFacts should be labelled with letters 'a', 'b', 'c' (etc).
-\nIf there are no relevant facts about the file, just return an empty string.
+'''{file_description}'''
+
+provide what file is responsible for and at most 3 key facts about this file with regard to the question:
+{QUESTION_BEGIN}{question}{QUESTION_END}. Without any comments from your side.
+
+Facts should be labelled with letters 'a', 'b', 'c' (etc).
+Warning: if there are no relevant facts about the file, or the file
+is not related to the question, just return an empty string. It is important.
 """
     )
 
@@ -273,7 +280,12 @@ def retrieve(question):
         )
 
     with Retry(
-        get_reranked_docs, stop_max_attempt_number=3, wait_fixed=2000
+        get_reranked_docs,
+        stop_max_attempt_number=3,
+        wait_fixed=2000,
+        before_attempts=lambda attempt_number: print(
+            f"Attempting to rerank documents...{attempt_number}"
+        ),
     ) as retry_get_reranked_docs:
         reranked_docs = retry_get_reranked_docs(question)
     # print("reranked_docs: ", reranked_docs)
@@ -297,7 +309,12 @@ def retrieve(question):
     ]
 
     with Retry(
-        _get_files_descriptions_for_question, stop_max_attempt_number=3, wait_fixed=2000
+        _get_files_descriptions_for_question,
+        stop_max_attempt_number=3,
+        wait_fixed=2000,
+        before_attempts=lambda attempt_number: print(
+            f"Attempting to get files descriptions for question...{attempt_number}"
+        ),
     ) as retry_get_files_descriptions_for_question:
         files_descriptions_for_question = retry_get_files_descriptions_for_question(
             files_names, files_descriptions, question
@@ -312,18 +329,37 @@ def retrieve(question):
         if (
             not description_for_question
             or len(description_for_question) < MIN_DESCRIPTION_FOR_QUESTION_LENGTH
+            or any(
+                p in description_for_question.lower()
+                for p in ["not related", "does not directly relate", "does not relate"]
+            )
         ):
             continue
-        response += f"{item_number}. File {filename}:\n{description_for_question}\n\n"
+
+        is_read_only = any(
+            ("/" + filename.lstrip("/")).rstrip("/").startswith("/" + rop.lstrip("/"))
+            for rop in read_only_paths
+        )
+        filename_line = (
+            f"{item_number}. File {filename}"
+            + (
+                " (this file is read-only - you cannot modify it in any way!)"
+                if is_read_only
+                else ""
+            )
+            + ":"
+        )
+
+        response += f"{filename_line}\n{description_for_question}\n\n"
         item_number += 1
 
-    response += "\n\nRemember to see files before adding to final response!"
+    response += "\n\nRemember to see files (use tool `see_file`) before adding to final response!"
     print(response)
 
     return response
 
 
 if __name__ == "__main__":
-    results = retrieve('Find files that reference or import some module')
+    results = retrieve("Find files that reference or import some module")
     print("\n\n")
     print("results: ", results)

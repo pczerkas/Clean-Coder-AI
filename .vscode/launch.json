@@ -10,6 +10,7 @@
             "request": "launch",
             "module": "rag.write_descriptions",
             "cwd": "${workspaceFolder}",
+            "args": ["--force-upload"],
             "justMyCode": false,
         },
         {

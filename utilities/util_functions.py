@@ -4,6 +4,7 @@ import re
 import textwrap
 import xml.etree.ElementTree as ET
 
+import jsoncfg
 from dotenv import find_dotenv, load_dotenv
 from termcolor import colored
 
@@ -19,15 +20,15 @@ def print_wrapped(content, width=160):
     print(wrapped_content)
 
 
-def check_file_contents(files):
+def check_files_contents(files):
     from tools.tools import see_file
 
-    file_contents = str()
+    files_contents = str()
     for file_name in files:
         file_content = see_file(file_name)
-        file_contents += file_content + "\n\n###\n\n"
+        files_contents += file_content + "\n\n###\n\n"
 
-    return file_contents
+    return files_contents
 
 
 def find_tool_json(response):
@@ -36,12 +37,16 @@ def find_tool_json(response):
     if len(matches) == 1:
         json_str = matches[0].strip()
         try:
-            json_obj = json.loads(json_str)
+            # json_obj = json.loads(json_str)
+            json_obj = jsoncfg.loads(json_str)
+
             return json_obj
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, jsoncfg.JSONConfigException):
             return "Invalid json."
+
     elif len(matches) > 1:
         return "Multiple jsons found."
+
     else:
         print("No json found in response.")
         return None

@@ -56,10 +56,15 @@ def list_dir(directory):
     try:
         directory = "/" + directory.lstrip("/").rstrip("/")
         files = set()
-        if any(directory.startswith("/" + ap.lstrip("/")) for ap in allowed_paths):
+        if any(
+            ("/" + directory.lstrip("/")).startswith("/" + ap.lstrip("/"))
+            for ap in allowed_paths
+        ):
             files = os.listdir(work_dir + directory)
         elif any(
-            (("/" + ap.lstrip("/")).rstrip("/") + "/").startswith(directory)
+            (("/" + ap.lstrip("/")).rstrip("/") + "/").startswith(
+                "/" + directory.lstrip("/")
+            )
             for ap in allowed_paths
         ):
             level = (directory.rstrip("/") + "/").count("/")
@@ -72,7 +77,7 @@ def list_dir(directory):
 
         for f in files:
             if any(
-                (directory + "/" + f).startswith("/" + bp.lstrip("/"))
+                ("/" + directory.lstrip("/") + "/" + f).startswith("/" + bp.lstrip("/"))
                 for bp in blacklisted_paths
             ):
                 files.remove(f)
@@ -91,13 +96,32 @@ def list_dir(directory):
 )
 def see_file(filename):
     try:
-        if any(filename.startswith("/" + bp.lstrip("/")) for bp in blacklisted_paths):
+        if any(
+            ("/" + filename.lstrip("/")).rstrip("/").startswith("/" + bp.lstrip("/"))
+            for bp in blacklisted_paths
+        ):
             return "You are not allowed to see into this file."
+
+        is_read_only = any(
+            ("/" + filename.lstrip("/")).rstrip("/").startswith("/" + rop.lstrip("/"))
+            for rop in read_only_paths
+        )
+
         with open(work_dir + filename, "r", encoding="utf-8") as file:
             lines = file.readlines()
+
         formatted_lines = [f"{i+1}|{line[:-1]}\n" for i, line in enumerate(lines)]
         file_content = "".join(formatted_lines)
-        file_content = filename + ":\n\n" + file_content
+        filename_line = (
+            filename
+            + (
+                " (this file is read-only - you cannot modify it in any way!)"
+                if is_read_only
+                else ""
+            )
+            + ":"
+        )
+        file_content = filename_line + "\n\n" + file_content
 
         return file_content
     except Exception as e:

@@ -153,11 +153,19 @@ def call_planers(state):
         )
 
     with Retry(
-        generate_plan_propositions, stop_max_attempt_number=3, wait_fixed=2000
+        generate_plan_propositions,
+        stop_max_attempt_number=3,
+        wait_fixed=2000,
+        before_attempts=lambda attempt_number: print(
+            f"Attempting to generate plan propositions...{attempt_number}"
+        ),
     ) as retry_generate_plan_propositions:
         plan_propositions_messages = retry_generate_plan_propositions(
             messages, nr_plans
         )
+
+    for i, message in enumerate(plan_propositions_messages):
+        print(f"Proposition nr {i+1}:\n\n{message.content}")
 
     for i, proposition in enumerate(plan_propositions_messages):
         state["voter_messages"].append(AIMessage(content="_"))
@@ -175,14 +183,19 @@ def call_planers(state):
         )
 
     with Retry(
-        choose_the_best_plan, stop_max_attempt_number=3, wait_fixed=2000
+        choose_the_best_plan,
+        stop_max_attempt_number=3,
+        wait_fixed=2000,
+        before_attempts=lambda attempt_number: print(
+            f"Attempting to choose the best plan...{attempt_number}"
+        ),
     ) as retry_choose_the_best_plan:
         response = retry_choose_the_best_plan(state)
 
     choice = int(response["response"][2]["choice"])
     plan = plan_propositions_messages[choice - 1]
     state["messages"].append(plan)
-    print_wrapped(f"Chosen plan:\n\n{plan.content}")
+    print_wrapped(f"Chosen plan no.{choice}:\n\n{plan.content}")
 
     '''
     print("Checking files completeness...")
@@ -224,14 +237,18 @@ researcher_workflow.add_conditional_edges("human", after_ask_human_condition)
 researcher = researcher_workflow.compile()
 
 
-def planning(task, file_contents):
+def planning(task, message_to_programmer, files_contents):
     print("Planner starting its work")
-    message_content_without_imgs = f"Task: {task},\n\nFiles:\n{file_contents}"
-    message_without_imgs = HumanMessage(content=message_content_without_imgs)
+
+    print(f"Message to programmer:\n{message_to_programmer}")
+    print(f"Files contents:\n{files_contents}")
+
+    message_content = f"Task: {task},\n\nMessage to programmer: {message_to_programmer},\n\nFiles:\n{files_contents}"
+    human_message = HumanMessage(content=message_content)
 
     inputs = {
-        "messages": [system_message, message_without_imgs],
-        "voter_messages": [voter_system_message, message_without_imgs],
+        "messages": [system_message, human_message],
+        "voter_messages": [voter_system_message, human_message],
         "secretary_messages": [secretary_system_message],
     }
 
@@ -239,7 +256,12 @@ def planning(task, file_contents):
         return researcher.invoke(inputs, {"recursion_limit": 200})["messages"][-2]
 
     with Retry(
-        get_planner_response, stop_max_attempt_number=3, wait_fixed=2000
+        get_planner_response,
+        stop_max_attempt_number=3,
+        wait_fixed=2000,
+        before_attempts=lambda attempt_number: print(
+            f"Attempting to get planner response...{attempt_number}"
+        ),
     ) as retry_get_planner_response:
         planner_response = retry_get_planner_response(inputs)
 

@@ -25,7 +25,7 @@ from utilities.langgraph_common_functions import (
     call_tool,
 )
 from utilities.util_functions import (
-    check_file_contents,
+    check_files_contents,
     find_tool_json,
     find_tool_xml,
     print_wrapped,

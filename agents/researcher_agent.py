@@ -34,7 +34,7 @@ from utilities.langgraph_common_functions import (
     call_tool,
 )
 from utilities.util_functions import (
-    check_file_contents,
+    check_files_contents,
     find_tool_json,
     find_tool_xml,
     print_wrapped,
@@ -49,17 +49,18 @@ deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 
 @tool
 @set_docstring(
-    f"""That tool outputs list of files executor will need to change.
+    f"""That tool outputs message to programmer as well as list of files executor will need to change.
     Use that tool only when you 100% sure you found all the files Executor will need to modify.
     If not, do additional research.
     Include only the files you are convinced that will be useful.
 
     tool input:
+    :param message_to_programmer: "Programmer: what do you need to do"],
     :param files_to_work_on: ["List", "of", "existing files", "to potentially introduce", "changes"],
     :param reference_files: ["List", "of code files", "useful to code reference"],
 {tool_description_end}"""
 )
-def final_response(files_to_work_on, reference_files):
+def final_response(message_to_programmer, files_to_work_on, reference_files):
     pass
 
 
@@ -133,10 +134,12 @@ You checking a lot of different folders looking around for interesting files (he
 The more folders/files you will check, the more they will pay you.
 When you discover significant dependencies from one file to another, ensure to inspect both.
 Your final selection should include files needed to be modified or needed as reference for a programmer
-(for example to see how code in similar file implemented).
+(to see how code in similar file is implemented - it is important).
 Avoid recommending unseen or non-existent files in final response. Start from '/' directory.
 Avoid checking files, that you have already checked.
-You need to point out all files programmer needed to see to execute task. Task is:
+You need to POINT OUT ALL FILES programmer needed to see to execute task.
+
+Task is:
 '''
 {{task}}
 '''
@@ -219,10 +222,11 @@ def research_task(task):
 
     # tool_json = find_tool_xml(researcher_response.content)
     tool_json = find_tool_json(researcher_response.content)
+    message_to_programmer = tool_json["tool_input"]["message_to_programmer"]
     text_files = set(
         tool_json["tool_input"]["files_to_work_on"]
         + tool_json["tool_input"]["reference_files"]
     )
-    file_contents = check_file_contents(text_files)
+    files_contents = check_files_contents(text_files)
 
-    return text_files, file_contents
+    return message_to_programmer, text_files, files_contents

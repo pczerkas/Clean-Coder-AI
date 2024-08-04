@@ -1,6 +1,7 @@
 # these three lines swap the stdlib sqlite3 lib with the pysqlite3 package
-__import__("pysqlite3")
 import sys
+
+import pysqlite3
 
 sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 
@@ -24,9 +25,11 @@ from utilities.retrying_context_manager import Retry
 DESCRIPTIONS_DIR = ".clean_coder/files_and_folders_descriptions"
 
 load_dotenv(find_dotenv(), override=True)
-work_dir = os.getenv("WORK_DIR")
-allowed_paths = list(filter(None, re.split(r'[\n,]', os.getenv("ALLOWED_PATHS"))))
-blacklisted_paths = list(filter(None, re.split(r'[\n,]', os.getenv("BLACKLISTED_PATHS"))))
+work_dir = os.getenv("WORK_DIR", "./").rstrip("/") + "/"
+allowed_paths = list(filter(None, re.split(r"[\n,]", os.getenv("ALLOWED_PATHS"))))
+blacklisted_paths = list(
+    filter(None, re.split(r"[\n,]", os.getenv("BLACKLISTED_PATHS")))
+)
 deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 
 # llm = ChatAnthropic(
@@ -153,10 +156,19 @@ def write_descriptions(
         # """Describe the following code in 4 sentences or less, focusing only on important information from integration point of view.
         # Write what file is responsible for.\n\n'''\n{code}'''
         # """
+        #         """Describe the following code, focusing only on important information from
+        # integration point of view. Write what file is responsible for.
+        # Mention names of all imported modules (even models and exception classes).
+        # Mention names of all functions and classes.
+        # \n\n'''\n{code}'''
+        # """
         """Describe the following code, focusing only on important information from
 integration point of view. Write what file is responsible for.
 Mention names of all imported modules (even models and exception classes).
-Mention names of all functions and classes.
+Mention names of all public functions and public classes.
+Mention names of all public functions parameters.
+Don't describe functions parameters meaning or types.
+Don't cite any code inside functions or classes.
 \n\n'''\n{code}'''
 """
     )
@@ -183,7 +195,12 @@ Mention names of all functions and classes.
             continue
 
         with Retry(
-            get_descriptions, stop_max_attempt_number=3, wait_fixed=2000
+            get_descriptions,
+            stop_max_attempt_number=3,
+            wait_fixed=2000,
+            before_attempts=lambda attempt_number: print(
+                f"Attempting to get descriptions for batch...{attempt_number}"
+            ),
         ) as retry_get_descriptions:
             descriptions = retry_get_descriptions(undescribed_files_paths_batch)
         # print(*descriptions, sep='\n\n')
@@ -209,7 +226,7 @@ def prepare_collection_document(file_path_id, content) -> str:
 
 def upload_descriptions_to_vdb(limit_file_paths: List[Path] = None) -> None:
     chroma_client = chromadb.PersistentClient(
-        path=os.getenv("WORK_DIR") + ".clean_coder/chroma_base"
+        path=work_dir + ".clean_coder/chroma_base"
     )
     collection_name = f"clean_coder_{Path(work_dir).name}_file_descriptions"
 

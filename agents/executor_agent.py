@@ -34,7 +34,7 @@ from utilities.langgraph_common_functions import (
 )
 from utilities.util_functions import (
     check_application_logs,
-    check_file_contents,
+    check_files_contents,
     find_tool_json,
     find_tool_xml,
     print_wrapped,
@@ -277,21 +277,21 @@ class Executor:
             if not hasattr(msg, "contains_file_contents")
         ]
         # Add new file contents
-        file_contents = check_file_contents(self.files)
+        files_contents = check_files_contents(self.files)
         file_contents_msg = HumanMessage(
-            content=f"File contents:\n{file_contents}", contains_file_contents=True
+            content=f"Files contents:\n{files_contents}", contains_file_contents=True
         )
         state["messages"].append(file_contents_msg)
         return state
 
-    def do_task(self, task, plan, file_contents):
+    def do_task(self, task, plan, files_contents):
         print("Executor starting its work")
         inputs = {
             "messages": [
                 system_message,
                 HumanMessage(content=f"Task: {task}\n\n###\n\nPlan: {plan}"),
                 HumanMessage(
-                    content=f"File contents: {file_contents}",
+                    content=f"Files contents: {files_contents}",
                     contains_file_contents=True,
                 ),
             ]
