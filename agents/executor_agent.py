@@ -24,6 +24,7 @@ from tools.tools import (
     rename_directory,
     replace_code,
     see_file,
+    tool_description_end,
 )
 from utilities.langgraph_common_functions import (
     after_ask_human_condition,
@@ -35,7 +36,10 @@ from utilities.util_functions import (
     check_application_logs,
     check_file_contents,
     find_tool_json,
+    find_tool_xml,
     print_wrapped,
+    read_project_knowledge,
+    set_docstring,
 )
 
 load_dotenv(find_dotenv(), override=True)
@@ -44,9 +48,12 @@ log_file_path = os.getenv("LOG_FILE")
 
 
 @tool
+@set_docstring(
+    f"""Call that tool when all changes are implemented to tell the job is done.
+    If you have no idea which tool to call, call that.
+{tool_description_end}"""
+)
 def final_response():
-    """Call that tool when all changes are implemented to tell the job is done. If you have no idea which tool to call,
-    call that."""
     pass
 
 

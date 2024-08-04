@@ -75,6 +75,7 @@ Here is description of the project you work on:
 
 You have access to following tools:
 {rendered_tools}\n
+
 First, provide step by step reasoning about what do you need to find in order to accomplish the task.
 Next, generate response using json template: Choose only one tool to use.
 ```json

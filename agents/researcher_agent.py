@@ -20,7 +20,13 @@ from llamaapi import LlamaAPI
 
 from models.codeium_chat import CodeiumChatModel
 from rag.retrieval import vdb_availabe
-from tools.tools import list_dir, retrieve_files_by_semantic_query, see_file, see_image
+from tools.tools import (
+    list_dir,
+    retrieve_files_by_semantic_query,
+    see_file,
+    see_image,
+    tool_description_end,
+)
 from utilities.langgraph_common_functions import (
     after_ask_human_condition,
     ask_human,
@@ -33,6 +39,7 @@ from utilities.util_functions import (
     find_tool_xml,
     print_wrapped,
     read_project_knowledge,
+    set_docstring,
 )
 
 load_dotenv(find_dotenv(), override=True)
@@ -41,8 +48,8 @@ deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 
 
 @tool
-def final_response(files_to_work_on, reference_files):
-    """That tool outputs list of files executor will need to change.
+@set_docstring(
+    f"""That tool outputs list of files executor will need to change.
     Use that tool only when you 100% sure you found all the files Executor will need to modify.
     If not, do additional research.
     Include only the files you are convinced that will be useful.
@@ -50,7 +57,9 @@ def final_response(files_to_work_on, reference_files):
     tool input:
     :param files_to_work_on: ["List", "of", "existing files", "to potentially introduce", "changes"],
     :param reference_files: ["List", "of code files", "useful to code reference"],
-    """
+{tool_description_end}"""
+)
+def final_response(files_to_work_on, reference_files):
     pass
 
 
@@ -138,7 +147,6 @@ Knowledge about project (not so important):
 
 You have access to following tools:
 {rendered_tools}
-
 
 First, provide step by step reasoning about results of your previous action. Think what do you need to find now in order to accomplish the task.
 Next, generate response using json template: Choose only one tool to use.

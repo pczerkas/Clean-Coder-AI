@@ -7,8 +7,6 @@ import xml.etree.ElementTree as ET
 from dotenv import find_dotenv, load_dotenv
 from termcolor import colored
 
-from tools.tools import see_file
-
 load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
 log_file_path = os.getenv("LOG_FILE")
@@ -22,6 +20,8 @@ def print_wrapped(content, width=160):
 
 
 def check_file_contents(files):
+    from tools.tools import see_file
+
     file_contents = str()
     for file_name in files:
         file_content = see_file(file_name)
@@ -95,6 +95,14 @@ def read_project_knowledge():
         project_knowledge = f.read()
 
     return project_knowledge
+
+
+def set_docstring(docstring):
+    def decorator(func):
+        func.__doc__ = docstring
+        return func
+
+    return decorator
 
 
 if __name__ == "__main__":

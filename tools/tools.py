@@ -1,6 +1,7 @@
 import base64
 import os
 import re
+from pathlib import Path
 
 import playwright
 from dotenv import find_dotenv, load_dotenv
@@ -8,6 +9,7 @@ from langchain.tools import StructuredTool, tool
 
 from rag.retrieval import retrieve
 from utilities.syntax_checker_functions import check_syntax
+from utilities.util_functions import set_docstring
 
 load_dotenv(find_dotenv(), override=True)
 work_dir = os.getenv("WORK_DIR")
@@ -17,11 +19,12 @@ blacklisted_paths = list(
     filter(None, re.split(r"[\n,]", os.getenv("BLACKLISTED_PATHS")))
 )
 tool_description_read_only_paths = (
-    "This tool cannot be used in this directories (and subdirectories): "
-    + ", ".join(read_only_paths)
+    f"""This tool cannot be used in these directories (and subdirectories):
+    {"\n    ".join(read_only_paths)}"""
     if read_only_paths
     else ""
 )
+tool_description_end = "-" * 80
 
 WRONG_EXECUTION_WORD = "Changes have not been introduced. "
 
@@ -39,6 +42,16 @@ Think step by step which function/code block you want to change before proposing
 """
 
 
+@tool
+@set_docstring(
+    f"""List files in directory.
+    tool input:
+    :param directory: Name of directory to list files in.
+
+    Main directories:
+    {'\n    '.join(allowed_paths)}
+{tool_description_end}"""
+)
 def list_dir(directory):
     try:
         directory = "/" + directory.lstrip("/").rstrip("/")
@@ -69,23 +82,14 @@ def list_dir(directory):
         return f"{type(e).__name__}: {e}"
 
 
-list_dir = StructuredTool.from_function(
-    list_dir,
-    description=f"""List files in directory.
-    tool input:
-    :param directory: Name of directory to list files in.
-
-    Main directories: {', '.join(allowed_paths)}
-    """,
-)
-
-
 @tool
-def see_file(filename):
-    """Check contents of file.
+@set_docstring(
+    f"""Check contents of file.
     tool input:
     :param filename: Name and path of file to check.
-    """
+{tool_description_end}"""
+)
+def see_file(filename):
     try:
         if any(filename.startswith("/" + bp.lstrip("/")) for bp in blacklisted_paths):
             return "You are not allowed to see into this file."
@@ -101,8 +105,8 @@ def see_file(filename):
 
 
 @tool
-def retrieve_files_by_semantic_query(query):
-    """Use that function to find files or folders in the app by text search.
+@set_docstring(
+    f"""Use that function to find files or folders in the app by text search.
     You can search for example for common styles, endpoint with user data, etc.
     Useful, when you know what do you look for, but don't know where.
     But, if it is possible, try to formulate your query in line with a main task.
@@ -110,17 +114,21 @@ def retrieve_files_by_semantic_query(query):
     Use that function at least once BEFORE calling final response to ensure you found all appropriate files.
 
     tool input:
-    :param query: Semantic query describing subject you looking for in one sentence. Ask for a singe thing only.
-    """
+    :param query: Semantic query describing subject you looking for in one sentence. Ask for a single thing only.
+{tool_description_end}"""
+)
+def retrieve_files_by_semantic_query(query):
     return retrieve(query)
 
 
 @tool
-def see_image(filename):
-    """Sees the image.
+@set_docstring(
+    f"""Sees the image.
     tool input:
     :param filename: Name and path of image to check.
-    """
+{tool_description_end}"""
+)
+def see_image(filename):
     try:
         with open(work_dir + filename, "rb") as image_file:
             img_encoded = base64.b64encode(image_file.read()).decode("utf-8")
@@ -129,6 +137,16 @@ def see_image(filename):
         return f"{type(e).__name__}: {e}"
 
 
+@tool
+@set_docstring(
+    f"""Insert new piece of code into provided file. Use when new code need to be added without replacing old one.
+    Proper indentation is important.
+    tool input:
+    :param filename: Name and path of file to change.
+    :param line_number: Line number to insert new code after.
+    :param code: Code to insert into the file. Without backticks around. Start it with appropriate indentation if needed.
+{tool_description_end}"""
+)
 def insert_code(filename, line_number, code):
     try:
         with open(work_dir + filename, "r+", encoding="utf-8") as file:
@@ -157,20 +175,19 @@ def insert_code(filename, line_number, code):
         return f"{type(e).__name__}: {e}"
 
 
-insert_code = StructuredTool.from_function(
-    insert_code,
-    description=f"""Insert new piece of code into provided file. Use when new code need to be added without replacing old one.
-    Proper indentation is important.
+@tool
+@set_docstring(
+    f"""Replace old piece of code between start_line and end_line with new one. Proper indentation is important.
+    Use that tool when you want to replace old piece of code with new one. Make smallest posible changes with this tool.
     tool input:
     :param filename: Name and path of file to change.
-    :param line_number: Line number to insert new code after.
-    :param code: Code to insert into the file. Without backticks around. Start it with appropriate indentation if needed.
+    :param start_line: Start line number to replace with new code. Inclusive - means start_line will be first line to change.
+    :param code: New piece of code to replace old one. Without backticks around. Start it with appropriate indentation if needed.
+    :param end_line: End line number to replace with new code. Inclusive - means end_line will be last line to change.
 
     {tool_description_read_only_paths}
-    """,
+{tool_description_end}"""
 )
-
-
 def replace_code(filename, start_line, code, end_line):
     try:
         with open(work_dir + filename, "r+", encoding="utf-8") as file:
@@ -199,21 +216,16 @@ def replace_code(filename, start_line, code, end_line):
         return f"{type(e).__name__}: {e}"
 
 
-replace_code = StructuredTool.from_function(
-    replace_code,
-    description=f"""Replace old piece of code between start_line and end_line with new one. Proper indentation is important.
-    Use that tool when you want to replace old piece of code with new one. Make smallest posible changes with this tool.
+@tool
+@set_docstring(
+    f"""Create new file with provided code. Use that tool when want to insert some additional lines into code.
     tool input:
-    :param filename: Name and path of file to change.
-    :param start_line: Start line number to replace with new code. Inclusive - means start_line will be first line to change.
-    :param code: New piece of code to replace old one. Without backticks around. Start it with appropriate indentation if needed.
-    :param end_line: End line number to replace with new code. Inclusive - means end_line will be last line to change.
+    :param filename: Name and path of file to create.
+    :param code: Code to write in the file.
 
     {tool_description_read_only_paths}
-    """,
+{tool_description_end}"""
 )
-
-
 def create_file_with_code(filename, code):
     try:
         human_message = input(
@@ -225,25 +237,24 @@ def create_file_with_code(filename, code):
                 + f"Action wasn't executed because of human interruption. He said: {human_message}"
             )
 
-        with open(work_dir + filename, "w", encoding="utf-8") as file:
+        output_path = Path(work_dir + filename)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as file:
             file.write(code)
         return "File been created successfully."
     except Exception as e:
         return f"{type(e).__name__}: {e}"
 
 
-create_file_with_code = StructuredTool.from_function(
-    create_file_with_code,
-    description="""Create new file with provided code. Use that tool when want to insert some additional lines into code.
+@tool
+@set_docstring(
+    f"""Create new directory with provided name. Use that tool when you want to create a new directory.
     tool input:
-    :param filename: Name and path of file to create.
-    :param code: Code to write in the file.
+    :param path: Path of directory to create.
 
     {tool_description_read_only_paths}
-    """,
+{tool_description_end}"""
 )
-
-
 def create_directory(path):
     try:
         human_message = input(
@@ -262,17 +273,16 @@ def create_directory(path):
         return f"{type(e).__name__}: {e}"
 
 
-create_directory = StructuredTool.from_function(
-    create_directory,
-    description="""Create new directory with provided name. Use that tool when you want to create a new directory.
+@tool
+@set_docstring(
+    f"""Rename directory with provided name. Use that tool when you want to rename directory.
     tool input:
-    :param path: Path of directory to create.
+    :param old_path: old path of directory.
+    :param new_path: new path of directory.
 
     {tool_description_read_only_paths}
-    """,
+{tool_description_end}"""
 )
-
-
 def rename_directory(old_path, new_path):
     try:
         human_message = input(
@@ -291,25 +301,14 @@ def rename_directory(old_path, new_path):
         return f"{type(e).__name__}: {e}"
 
 
-rename_directory = StructuredTool.from_function(
-    rename_directory,
-    description="""Rename directory with provided name. Use that tool when you want to rename directory.
-    tool input:
-    :param old_path: old path of directory.
-    :param new_path: new path of directory.
-
-    {tool_description_read_only_paths}
-    """,
-)
-
-
 @tool
-def ask_human_tool(prompt):
-    """
-    Ask human to provide debug actions or observations you're not available to do.
+@set_docstring(
+    f"""Ask human to provide debug actions or observations you're not available to do.
     tool input:
     :param prompt: prompt to human.
-    """
+{tool_description_end}"""
+)
+def ask_human_tool(prompt):
     try:
         human_message = input(prompt)
         return human_message
